@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<!-- saved from url=(0047)file:///C:/Users/andyliu/Downloads/index_2.html -->
+<html lang="zh-TW"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>360° Panorama Viewer</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f0f17;
+    --surface: #1a1a28;
+    --border: rgba(255,255,255,0.1);
+    --text: #e0e0f0;
+    --text-muted: #8888aa;
+    --accent: #6699ff;
+    --radius: 12px;
+    --font: 'Segoe UI', system-ui, sans-serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px 48px;
+  }
+
+  header {
+    width: 100%;
+    max-width: 960px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  header h1 { font-size: 18px; font-weight: 600; letter-spacing: .03em; }
+  header span {
+    font-size: 12px; color: var(--text-muted);
+    background: rgba(255,255,255,0.06);
+    padding: 4px 10px; border-radius: 20px;
+    border: 0.5px solid var(--border);
+  }
+
+  #main { width: 100%; max-width: 960px; display: flex; flex-direction: column; gap: 10px; }
+
+  /* Drop zone */
+  #drop-zone {
+    border: 1.5px dashed rgba(255,255,255,0.2);
+    border-radius: var(--radius);
+    padding: 40px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+    background: var(--surface);
+  }
+  #drop-zone:hover, #drop-zone.over {
+    border-color: var(--accent);
+    background: rgba(102,153,255,0.06);
+  }
+  #drop-zone svg { opacity: .4; margin-bottom: 12px; }
+  #drop-zone p { font-size: 15px; color: var(--text-muted); margin-bottom: 6px; }
+  #drop-zone .hint { font-size: 12px; color: rgba(255,255,255,0.28); }
+  #file-input { display: none; }
+
+  /* Gallery strip */
+  #gallery-strip {
+    display: none;
+    gap: 8px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: 2px 0 6px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.15) transparent;
+  }
+  #gallery-strip::-webkit-scrollbar { height: 4px; }
+  #gallery-strip::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+
+  .gthumb {
+    flex-shrink: 0;
+    width: 88px; height: 54px;
+    border-radius: 8px;
+    border: 1.5px solid rgba(255,255,255,0.12);
+    overflow: hidden; cursor: pointer; position: relative;
+    transition: border-color .15s, transform .1s;
+  }
+  .gthumb:hover { transform: translateY(-1px); }
+  .gthumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .gthumb.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(102,153,255,0.3); }
+  .gthumb .del {
+    position: absolute; top: 3px; right: 3px;
+    background: rgba(0,0,0,0.7); border-radius: 50%;
+    width: 16px; height: 16px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; color: white; cursor: pointer;
+    opacity: 0; transition: opacity .12s;
+  }
+  .gthumb:hover .del { opacity: 1; }
+  .gthumb .tname {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    font-size: 9px; color: white;
+    background: rgba(0,0,0,0.6);
+    padding: 2px 4px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #add-more-btn {
+    flex-shrink: 0;
+    width: 88px; height: 54px;
+    border-radius: 8px;
+    border: 1.5px dashed rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.04);
+    cursor: pointer;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 3px;
+    color: rgba(255,255,255,0.35); font-size: 11px;
+    transition: border-color .15s, background .15s;
+  }
+  #add-more-btn:hover { border-color: var(--accent); background: rgba(102,153,255,0.06); color: var(--accent); }
+
+  /* Viewer */
+  #viewer-wrap {
+    position: relative;
+    width: 100%; height: 540px;
+    background: #05050e;
+    border-radius: var(--radius);
+    border: 0.5px solid var(--border);
+    overflow: hidden;
+    cursor: grab;
+    user-select: none;
+    display: none;
+  }
+  #viewer-wrap.dragging { cursor: grabbing; }
+  #pano-canvas { display: block; width: 100%; height: 100%; }
+
+  /* HUD */
+  #hud {
+    position: absolute; top: 0; left: 0; right: 0;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding: 14px 16px; pointer-events: none;
+  }
+  .badge {
+    font-size: 11px;
+    font-family: 'Courier New', monospace;
+    background: rgba(0,0,0,0.6);
+    color: #ccd;
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 0.5px solid rgba(255,255,255,0.1);
+    letter-spacing: .04em;
+  }
+  #hud-left { display: flex; flex-direction: column; gap: 5px; }
+
+  /* Right controls */
+  #ctrl-col {
+    position: absolute; top: 50%; right: 14px;
+    transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 6px;
+    pointer-events: all;
+  }
+  .ctrl {
+    background: rgba(0,0,0,0.58);
+    border: 0.5px solid rgba(255,255,255,0.15);
+    color: #ccd;
+    border-radius: 20px;
+    padding: 6px 13px;
+    font-size: 11px;
+    cursor: pointer;
+    font-family: var(--font);
+    transition: background .12s;
+    white-space: nowrap;
+  }
+  .ctrl:hover { background: rgba(255,255,255,0.13); }
+  .ctrl.on { background: rgba(102,153,255,0.25); border-color: rgba(102,153,255,0.5); }
+
+  /* Nav bar */
+  #nav-bar {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px;
+    background: linear-gradient(transparent, rgba(0,0,0,0.72));
+    pointer-events: all;
+  }
+  .nav-btn {
+    background: rgba(0,0,0,0.58);
+    border: 0.5px solid rgba(255,255,255,0.18);
+    color: #dde;
+    border-radius: 20px;
+    padding: 7px 18px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: var(--font);
+    transition: background .12s;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .nav-btn:hover { background: rgba(255,255,255,0.15); }
+  .nav-btn:disabled { opacity: .28; cursor: default; pointer-events: none; }
+
+  #page-indicator { display: flex; gap: 7px; align-items: center; }
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: rgba(255,255,255,0.25);
+    cursor: pointer; border: none; padding: 0;
+    transition: background .15s, transform .15s;
+  }
+  .dot.active { background: white; transform: scale(1.3); }
+
+  /* Crosshair */
+  #crosshair {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 20px; height: 20px;
+    pointer-events: none; opacity: .22;
+  }
+  #crosshair::before, #crosshair::after { content: ''; position: absolute; background: white; }
+  #crosshair::before { width: 1px; height: 100%; left: 50%; transform: translateX(-50%); }
+  #crosshair::after  { height: 1px; width: 100%; top: 50%; transform: translateY(-50%); }
+
+  #instructions {
+    font-size: 12px;
+    color: rgba(255,255,255,0.22);
+    text-align: center;
+    line-height: 1.9;
+    padding-top: 2px;
+  }
+
+  @media (max-width: 600px) {
+    #viewer-wrap { height: 320px; }
+    .nav-btn { font-size: 12px; padding: 6px 13px; }
+    #ctrl-col { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⬡ 360° Panorama Viewer</h1>
+  <span>drag · scroll · navigate</span>
+</header>
+
+<div id="main">
+
+  <div id="drop-zone">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M4 16l4-4 4 4 4-8 4 8"></path><rect x="2" y="3" width="20" height="18" rx="2"></rect>
+    </svg>
+    <p>Click or drag &amp; drop your 360° panorama images</p>
+    <p class="hint">Equirectangular &nbsp;·&nbsp; JPG &nbsp;PNG &nbsp;WebP &nbsp;·&nbsp; Multiple files OK</p>
+    <input type="file" id="file-input" accept="image/*" multiple="">
+  </div>
+
+  <div id="gallery-strip">
+    <div id="add-more-btn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>
+      </svg>
+      <span>add more</span>
+    </div>
+  </div>
+
+  <div id="viewer-wrap">
+    <canvas id="pano-canvas"></canvas>
+    <div id="hud">
+      <div id="hud-left">
+        <div class="badge" id="angle-badge">↔ 0°&nbsp;&nbsp;↕ 0°</div>
+        <div class="badge" id="img-name-badge" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+      </div>
+      <div>
+        <div class="badge" id="fov-badge">FOV 75°</div>
+      </div>
+    </div>
+
+    <div id="crosshair"></div>
+
+    <div id="ctrl-col">
+      <button class="ctrl" id="btn-auto">⟳ auto-rotate</button>
+      <button class="ctrl" id="btn-reset">⌖ reset view</button>
+      <button class="ctrl" id="btn-zi">＋ zoom in</button>
+      <button class="ctrl" id="btn-zo">－ zoom out</button>
+    </div>
+
+    <div id="nav-bar">
+      <button class="nav-btn" id="btn-prev">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        prev
+      </button>
+      <div id="page-indicator"></div>
+      <button class="nav-btn" id="btn-next">
+        next
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+      </button>
+    </div>
+  </div>
+
+  <p id="instructions">
+    🖱 Drag to look around &nbsp;·&nbsp; Scroll to zoom &nbsp;·&nbsp; ← → keyboard to switch images
+  </p>
+
+</div>
+
+<script>
+(function () {
+  const dz = document.getElementById('drop-zone');
+  const fi = document.getElementById('file-input');
+  const vw = document.getElementById('viewer-wrap');
+  const canvas = document.getElementById('pano-canvas');
+  const ctx = canvas.getContext('2d');
+  const angleBadge = document.getElementById('angle-badge');
+  const imgNameBadge = document.getElementById('img-name-badge');
+  const fovBadge = document.getElementById('fov-badge');
+  const galleryStrip = document.getElementById('gallery-strip');
+  const addMoreBtn = document.getElementById('add-more-btn');
+  const pageIndicator = document.getElementById('page-indicator');
+  const btnPrev = document.getElementById('btn-prev');
+  const btnNext = document.getElementById('btn-next');
+
+  let yaw = 0, pitch = 0, fov = 75;
+  let autoRot = false, dragging = false, lx = 0, ly = 0;
+  let images = [], currentIdx = -1, offCanvas = null;
+
+  /* ── Load images ── */
+  function addImages(files) {
+    const arr = Array.from(files).filter(f => f.type.startsWith('image/'));
+    if (!arr.length) return;
+    arr.forEach(f => {
+      const url = URL.createObjectURL(f);
+      const img = new Image();
+      img.onload = () => {
+        const oc = document.createElement('canvas');
+        oc.width = img.naturalWidth;
+        oc.height = img.naturalHeight;
+        oc.getContext('2d').drawImage(img, 0, 0);
+        images.push({ name: f.name, canvas: oc, thumbUrl: url });
+        rebuildStrip();
+        if (images.length === 1) loadScene(0);
+        else updateNav();
+      };
+      img.src = url;
+    });
+  }
+
+  /* ── Gallery strip ── */
+  function rebuildStrip() {
+    while (galleryStrip.firstChild && galleryStrip.firstChild !== addMoreBtn)
+      galleryStrip.removeChild(galleryStrip.firstChild);
+
+    images.forEach((e, i) => {
+      const t = document.createElement('div');
+      t.className = 'gthumb' + (i === currentIdx ? ' active' : '');
+
+      const im = document.createElement('img');
+      im.src = e.thumbUrl; im.alt = e.name;
+
+      const del = document.createElement('div');
+      del.className = 'del'; del.textContent = '×';
+      del.addEventListener('click', ev => { ev.stopPropagation(); removeImage(i); });
+
+      const nm = document.createElement('div');
+      nm.className = 'tname';
+      nm.textContent = e.name.replace(/\.[^.]+$/, '');
+
+      t.appendChild(im); t.appendChild(del); t.appendChild(nm);
+      t.addEventListener('click', () => loadScene(i));
+      galleryStrip.insertBefore(t, addMoreBtn);
+    });
+
+    galleryStrip.style.display = images.length ? 'flex' : 'none';
+  }
+
+  function removeImage(idx) {
+    images.splice(idx, 1);
+    if (images.length === 0) {
+      galleryStrip.style.display = 'none';
+      vw.style.display = 'none';
+      dz.style.display = '';
+      offCanvas = null; currentIdx = -1;
+    } else {
+      loadScene(Math.min(idx, images.length - 1));
+    }
+  }
+
+  /* ── Load scene ── */
+  function loadScene(idx) {
+    if (idx < 0 || idx >= images.length) return;
+    currentIdx = idx;
+    offCanvas = images[idx].canvas;
+    yaw = 0; pitch = 0; fov = 75;
+    imgNameBadge.textContent = images[idx].name.replace(/\.[^.]+$/, '');
+    vw.style.display = 'block';
+    dz.style.display = 'none';
+    resize();
+    rebuildStrip();
+    updateNav();
+    scrollThumbIntoView(idx);
+  }
+
+  function updateNav() {
+    btnPrev.disabled = currentIdx <= 0;
+    btnNext.disabled = currentIdx >= images.length - 1;
+    pageIndicator.innerHTML = '';
+    images.forEach((_, i) => {
+      const d = document.createElement('button');
+      d.className = 'dot' + (i === currentIdx ? ' active' : '');
+      d.setAttribute('aria-label', 'image ' + (i + 1));
+      d.addEventListener('click', () => loadScene(i));
+      pageIndicator.appendChild(d);
+    });
+  }
+
+  function scrollThumbIntoView(idx) {
+    const thumbs = galleryStrip.querySelectorAll('.gthumb');
+    if (thumbs[idx]) thumbs[idx].scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  }
+
+  /* ── Canvas resize ── */
+  function resize() {
+    const W = vw.clientWidth || 960, H = vw.clientHeight || 540;
+    canvas.width  = W * devicePixelRatio;
+    canvas.height = H * devicePixelRatio;
+    canvas.style.width  = W + 'px';
+    canvas.style.height = H + 'px';
+  }
+
+  /* ── Ray-cast equirectangular renderer ── */
+  function draw() {
+    if (!offCanvas) return;
+    const W = canvas.width, H = canvas.height;
+    const iW = offCanvas.width, iH = offCanvas.height;
+    const src = offCanvas.getContext('2d').getImageData(0, 0, iW, iH).data;
+    const out = ctx.createImageData(W, H);
+    const dst = out.data;
+
+    const yawR   = yaw   * Math.PI / 180;
+    const pitchR = pitch * Math.PI / 180;
+    const fovR   = fov   * Math.PI / 180;
+    const f = (H / 2) / Math.tan(fovR / 2);
+    const cp = Math.cos(pitchR), sp = Math.sin(pitchR);
+    const cy = Math.cos(yawR),   sy = Math.sin(yawR);
+
+    for (let py = 0; py < H; py++) {
+      for (let px = 0; px < W; px++) {
+        let rx = (px - W / 2) / f;
+        let ry = -(py - H / 2) / f;
+        const len = Math.sqrt(rx * rx + ry * ry + 1);
+        rx /= len; ry /= len; let rz = 1 / len;
+
+        const ry2 =  ry * cp - rz * sp;
+        const rz2 =  ry * sp + rz * cp;
+        const rx3 =  rx * cy + rz2 * sy;
+        const rz3 = -rx * sy + rz2 * cy;
+        const ry3 =  ry2;
+
+        const lon = Math.atan2(rx3, rz3);
+        const lat = Math.asin(Math.max(-1, Math.min(1, ry3)));
+        const u = (lon / (2 * Math.PI)) + 0.5;
+        const v = 0.5 - (lat / Math.PI);
+
+        const sx  = Math.floor(((u % 1 + 1) % 1) * iW);
+        const sy2 = Math.floor(Math.min(v, 0.9999) * iH);
+        const si = (sy2 * iW + sx) * 4;
+        const di = (py * W + px) * 4;
+        dst[di]     = src[si];
+        dst[di + 1] = src[si + 1];
+        dst[di + 2] = src[si + 2];
+        dst[di + 3] = 255;
+      }
+    }
+    ctx.putImageData(out, 0, 0);
+
+    angleBadge.textContent = `↔ ${Math.round((yaw % 360 + 360) % 360)}°  ↕ ${Math.round(pitch)}°`;
+    fovBadge.textContent   = `FOV ${Math.round(fov)}°`;
+  }
+
+  /* ── Render loop ── */
+  function loop() {
+    if (autoRot && !dragging) yaw = (yaw + 0.15) % 360;
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  /* ── Upload events ── */
+  dz.addEventListener('click', () => fi.click());
+  dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('over'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+  dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('over'); addImages(e.dataTransfer.files); });
+  fi.addEventListener('change', e => { addImages(e.target.files); fi.value = ''; });
+  addMoreBtn.addEventListener('click', () => fi.click());
+
+  /* ── Mouse drag ── */
+  vw.addEventListener('mousedown', e => { dragging = true; lx = e.clientX; ly = e.clientY; vw.classList.add('dragging'); });
+  document.addEventListener('mouseup', () => { dragging = false; vw.classList.remove('dragging'); });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    yaw   -= (e.clientX - lx) * (fov / canvas.width)  * 1.8;
+    pitch  = Math.max(-85, Math.min(85, pitch - (e.clientY - ly) * (fov / canvas.height) * 1.8));
+    lx = e.clientX; ly = e.clientY;
+  });
+
+  /* ── Touch ── */
+  vw.addEventListener('touchstart', e => { dragging = true; lx = e.touches[0].clientX; ly = e.touches[0].clientY; }, { passive: true });
+  document.addEventListener('touchend', () => dragging = false);
+  document.addEventListener('touchmove', e => {
+    if (!dragging) return;
+    yaw   -= (e.touches[0].clientX - lx) * (fov / canvas.width)  * 1.8;
+    pitch  = Math.max(-85, Math.min(85, pitch - (e.touches[0].clientY - ly) * (fov / canvas.height) * 1.8));
+    lx = e.touches[0].clientX; ly = e.touches[0].clientY;
+  }, { passive: true });
+
+  /* ── Scroll zoom ── */
+  vw.addEventListener('wheel', e => {
+    e.preventDefault();
+    fov = Math.max(25, Math.min(110, fov + e.deltaY * 0.05));
+  }, { passive: false });
+
+  /* ── Navigation ── */
+  btnPrev.addEventListener('click', () => loadScene(currentIdx - 1));
+  btnNext.addEventListener('click', () => loadScene(currentIdx + 1));
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') loadScene(currentIdx + 1);
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   loadScene(currentIdx - 1);
+  });
+
+  /* ── Control buttons ── */
+  document.getElementById('btn-auto').addEventListener('click', function () {
+    autoRot = !autoRot; this.classList.toggle('on', autoRot);
+  });
+  document.getElementById('btn-reset').addEventListener('click', () => { yaw = 0; pitch = 0; fov = 75; });
+  document.getElementById('btn-zi').addEventListener('click', () => fov = Math.max(25, fov - 8));
+  document.getElementById('btn-zo').addEventListener('click', () => fov = Math.min(110, fov + 8));
+
+  window.addEventListener('resize', () => { if (offCanvas) resize(); });
+  loop();
+})();
+</script>
+
+
+</body></html>
